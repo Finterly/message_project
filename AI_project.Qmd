@@ -90,6 +90,17 @@ clean_rating_data <- francois_clean_rating_data %>%
     ),
     perceived_source = factor(perceived_source, levels = c("human", "AI", "not sure")),
     source_correct_3cat = factor(source_correct_3cat)
+  ) %>%
+  select(
+    rater_id,
+    message_id,
+    domain,
+    true_source,
+    quality,
+    accuracy,
+    guideline_alignment,
+    perceived_source,
+    source_correct_3cat
   )
 
 str(clean_rating_data)
@@ -156,7 +167,7 @@ clean_PA_rater_data <- PA_rater_data %>%
 
 identical(names(clean_nutr_rater_data), names(clean_PA_rater_data))
 
-rater_data <- rbind(clean_nutr_rater_data, clean_PA_rater_data) %>%
+clean_rater_data <- rbind(clean_nutr_rater_data, clean_PA_rater_data) %>%
   distinct(rater_id, .keep_all = TRUE) %>%
   mutate(
     across(
@@ -166,7 +177,7 @@ rater_data <- rbind(clean_nutr_rater_data, clean_PA_rater_data) %>%
     years_at_rank = as.numeric(years_at_rank)
   )
 
-str(rater_data)
+str(clean_rater_data)
 ```
 
 # Descriptive Analyses
@@ -188,7 +199,7 @@ message_level_df <- clean_rating_data %>%
   distinct()
 
 # Table 1: Message characteristics
-table1_messages <- message_level_df %>%
+table_messages <- message_level_df %>%
   tbl_summary(
     by = true_source,
     include = domain,
@@ -208,10 +219,10 @@ table1_messages <- message_level_df %>%
     stat_1 ~ "**Human-generated**<br>N = {n}",
     stat_2 ~ "**AI-generated**<br>N = {n}"
   ) %>%
-  modify_caption("**Table 1. Messages by domain and true source**") %>%
+  modify_caption("**Messages by domain and true source**") %>%
   bold_labels()
 
-table1_messages
+table_messages
 ```
 
 ## Rater-Level Characteristics
@@ -232,7 +243,7 @@ table1_messages
 
 ```{r}
 # Table 1: Rater characteristics
-table1_raters_by_domain <- rater_data %>%
+table_raters_by_domain <- clean_rater_data %>%
   select(
     domain,
     credentials,
@@ -243,6 +254,9 @@ table1_raters_by_domain <- rater_data %>%
   ) %>%
   tbl_summary(
     by = domain,
+    # type = list(
+    #   years_at_rank ~ "continuous"
+    # ),
     label = list(
       credentials ~ "Credentials",
       rank ~ "Academic rank",
@@ -265,10 +279,10 @@ table1_raters_by_domain <- rater_data %>%
     label ~ "**Rater characteristic**",
     stat_0 ~ "**Overall**<br>N = {N}"
   ) %>%
-  modify_caption("**Table 1. Characteristics of expert raters by message domain**") %>%
+  modify_caption("**Characteristics of expert raters by message domain**") %>%
   bold_labels()
 
-table1_raters_by_domain
+table_raters_by_domain
 
 ```
 
