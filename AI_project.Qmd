@@ -40,15 +40,15 @@ library(gtsummary)
 ## Survey
 
 ```{r data}
-francois_clean_data <- read_excel("AI_messages_Eval_6-8-26.xlsx", sheet = "Sheet1") 
-nutr_rater_data <- read_excel("AI_messages_Eval_6-8-26.xlsx", sheet = "Nutr_Eval_DATA_LABELS_2026-04-0")[, 1:11]
-PA_rater_data <- read_excel("AI_messages_Eval_6-8-26.xlsx", sheet = "PA_eval_DATA_Labels")[,1:11]
+francois_clean_rating_data <- read_excel("data/AI_messages_Eval_6-8-26.xlsx", sheet = "Sheet1")
+nutr_rater_data <- read_excel("data/AI_messages_Eval_6-8-26.xlsx", sheet = "Nutr_Eval_DATA_LABELS_2026-04-0")[, 1:11]
+PA_rater_data <- read_excel("data/AI_messages_Eval_6-8-26.xlsx", sheet = "PA_eval_DATA_Labels")[, 1:11]
 ```
 
 ## Basic Check
 
 ```{r}
-francois_clean_data_basic_check <- francois_clean_data %>%
+francois_clean_rating_data_basic_check <- francois_clean_rating_data %>%
   mutate(
     check1 = case_when(
       `perceived_source (1=human, 2=AI, 3=not sure)` == "3" ~ NA_real_,
@@ -57,7 +57,7 @@ francois_clean_data_basic_check <- francois_clean_data %>%
     )
   )
 
-identical(francois_clean_data_basic_check$check1, francois_clean_data_basic_check$source_correct_binary) # TRUE
+identical(francois_clean_rating_data_basic_check$check1, francois_clean_rating_data_basic_check$source_correct_binary) # TRUE
 ```
 
 ## Clean Survey Data
@@ -65,10 +65,11 @@ identical(francois_clean_data_basic_check$check1, francois_clean_data_basic_chec
 Rename, recode, and factor some variables for clarity
 
 ```{r}
-clean_survey_data <- francois_clean_data %>%
+clean_rating_data <- francois_clean_rating_data %>%
   mutate(
-    domain = recode(domain, "Physiscal activity" = "physical activity"),
-    domain = factor(domain, levels = c("nutrition", "physical activity")),
+    domain = recode(domain, "Physiscal activity" = "Physical Activity"),
+    domain = recode(domain, "nutrition" = "Nutrition"),
+    domain = factor(domain, levels = c("Nutrition", "Physical Activity")),
     true_source = case_when(
       `true_source (1=human, 2=AI)` == 1 ~ "human",
       `true_source (1=human, 2=AI)` == 2 ~ "AI",
@@ -78,15 +79,16 @@ clean_survey_data <- francois_clean_data %>%
     source_correct_3cat = factor(source_correct_3cat)
   )
 
-str(clean_survey_data)
-unique(clean_survey_data$domain)
-unique(clean_survey_data$true_source)
+str(clean_rating_data)
+unique(clean_rating_data$domain)
+unique(clean_rating_data$true_source)
 ```
 
 ## Clean Rater Data
+
 ```{r}
 clean_nutr_rater_data <- nutr_rater_data %>%
-  mutate(rater_id = paste0("ne", `Record ID`)) %>%
+  mutate(rater_id = paste0("ne", `Record ID`), domain = "Nutrition") %>%
   dplyr::rename(
     record_id = "Record ID",
     redcap_survey_identifier = "Survey Identifier",
@@ -100,10 +102,27 @@ clean_nutr_rater_data <- nutr_rater_data %>%
     certifications = "License, Certifications, Professional Certifications (e.g. RDN, ACSM)",
     area_of_expertise = "Area of Research Expertise"
   ) %>%
-  select(rater_id, credentials, rank, years_at_rank, affiliation, certifications, area_of_expertise)
+  mutate(rank = recode(rank, "Associate Profesor" = "Associate Professor")) %>%
+  select(
+    domain,
+    rater_id,
+    credentials,
+    rank,
+    years_at_rank,
+    certifications,
+    area_of_expertise
+  )
 
 clean_PA_rater_data <- PA_rater_data %>%
-  mutate(rater_id = paste0("pae", record_id)) %>%
+  mutate(
+    rater_id = paste0("pae", record_id),
+    certifications = case_when(
+      is.na(certifications) ~ NA,
+      certifications %in% c("none", "None", "NA", "Na", "na", "N/A", "n/a") ~ NA,
+      TRUE ~ certifications
+    ), 
+    domain = "Physical Activity"
+  ) %>%
   dplyr::rename(
     survey_timestamp = "evaluation_of_physical_activity_intervention_messa_timestamp",
     first_name = "first_name_v2",
@@ -112,11 +131,30 @@ clean_PA_rater_data <- PA_rater_data %>%
     affiliation = "affiliation_v2",
     area_of_expertise = "research_expertise"
   ) %>%
-  select(rater_id, credentials, rank, years_at_rank, affiliation, certifications, area_of_expertise)
+  select(
+    domain,
+    rater_id,
+    credentials,
+    rank,
+    years_at_rank,
+    certifications,
+    area_of_expertise
+  )
 
 identical(names(clean_nutr_rater_data), names(clean_PA_rater_data))
-```
 
+rater_data <- rbind(clean_nutr_rater_data, clean_PA_rater_data) %>%
+  distinct(rater_id, .keep_all = TRUE) %>%
+  mutate(
+    across(
+      c(credentials, rank, certifications, area_of_expertise),
+      ~ as.factor(.x)
+    ),
+    years_at_rank = as.numeric(years_at_rank)
+  )
+
+str(rater_data)
+```
 
 # Descriptive Analyses
 
@@ -132,7 +170,7 @@ identical(names(clean_nutr_rater_data), names(clean_PA_rater_data))
 
 ```{r}
 # Create one-row-per-message dataset
-message_level_df <- clean_survey_data %>%
+message_level_df <- clean_rating_data %>%
   select(message_id, domain, true_source) %>%
   distinct()
 
@@ -179,18 +217,246 @@ table1_messages
 
 -   area of expertise
 
-### Nutrition Rater-Level Characteristics
 ```{r}
-clean_nutr_rater_data
+# Table 1: Rater characteristics
+table1_raters_by_domain <- rater_data %>%
+  select(
+    domain,
+    credentials,
+    rank,
+    years_at_rank,
+    certifications,
+    area_of_expertise
+  ) %>%
+  tbl_summary(
+    by = domain,
+    label = list(
+      credentials ~ "Credentials",
+      rank ~ "Academic rank",
+      years_at_rank ~ "Years at current rank",
+      certifications ~ "Certifications",
+      area_of_expertise ~ "Area of expertise"
+    ),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = list(
+      all_continuous() ~ c(1, 1),
+      all_categorical() ~ c(0, 1)
+    ),
+    missing = "ifany"
+  ) %>%
+  add_overall(last = FALSE) %>%
+  modify_header(
+    label ~ "**Rater characteristic**",
+    stat_0 ~ "**Overall**<br>N = {N}"
+  ) %>%
+  modify_caption("**Table 1. Characteristics of expert raters by message domain**") %>%
+  bold_labels()
+
+table1_raters_by_domain
 
 ```
 
-### Physical Activity Rater-Level Characteristics
-```{r}
+## Rating-Level Summaries
 
+-   For each outcome, report by true source and domain:
+-   quality: mean, SD, median, IQR
+-   accuracy: mean, SD, median, IQR
+-   guideline alignment: n and %
+-   perceived source: n and %
+-   correct source identification: n and %
+-   Also report:
+-   total number of ratings
+-   average number of ratings per message
+-   average number of messages rated per expert
+
+### Quality
+```{r}
+clean_rating_data
 
 ```
 
+### Accuracy
+```{r}
+clean_rating_data
+
+```
+
+### Guideline Alignment
+```{r}
+clean_rating_data
+
+```
+
+### Perceived Source
+```{r}
+clean_rating_data
+
+```
+
+# Primary Research Questions and Models
+
+## Question 1: Do human- and AI-generated messages differ in quality?
+
+```{r}
+
+```
+
+Outcome: quality, 1 to 5.
+
+Use linear mixed-effects regression. Fixed effects:
+
+-   true source
+
+-   domain Random effects:
+
+-   random intercept for message
+
+-   random intercept for expert rater Report:
+
+-   adjusted mean difference for AI versus human
+
+-   95% confidence interval
+
+-   p-value
+
+-   As a sensitivity analysis, we might consider fitting an ordinal mixed-effects model?
+
+## Question 2: Do human- and AI-generated messages differ in accuracy?
+
+Outcome: accuracy, 1 to 5.
+
+Use linear mixed-effects regression. Fixed effects:
+
+-   true source
+
+-   domain Random effects:
+
+-   random intercept for message
+
+-   random intercept for expert rater Report:
+
+-   adjusted mean difference for AI versus human
+
+-   95% confidence interval
+
+-   p-value
+
+-   As a sensitivity analysis, we might consider fitting an ordinal mixed-effects model?
+
+```{r}
+
+```
+
+## Question 3: Do human- and AI-generated messages differ in guideline alignment?
+
+Outcome: guideline alignment, 0 or 1.
+
+Use logistic mixed-effects regression. Fixed effects:
+
+-   true source
+
+-   domain Random effects:
+
+-   random intercept for message
+
+-   random intercept for expert rater Report:
+
+-   odds ratio for AI versus human
+
+-   95% confidence interval
+
+-   p-value
+
+```{r}
+
+```
+
+## Question 4: Can experts correctly identify whether messages were human- or AI-generated?
+
+Analyze source identification in two ways.
+
+### 4a. Three-Category Source Identification Outcome 
+
+Create a three-category source identification variable:
+
+-   correct
+
+-   incorrect
+
+-   not sure
+
+Use multinomial mixed-effects regression, if feasible.
+
+Fixed effects:
+
+-   true source
+
+-   domain
+
+Random effects:
+
+-   random intercept for message
+
+-   random intercept for expert rater
+
+Report:
+
+-   percentage correct, incorrect, and not sure overall
+
+-   percentage correct, incorrect, and not sure by true source
+
+-   percentage correct, incorrect, and not sure by domain
+
+-   model-based estimates for associations between true source, domain, and source-identification category
+
+This should be the primary source-identification analysis because “not sure” was an available response option.
+
+```{r}
+
+```
+
+### 4b. Binary Source Identification Among Forced Classifications 
+
+For this analysis, exclude “not sure” responses. Create a binary source identification variable:
+
+-   1 equals correct
+
+-   0 equals incorrect
+
+Use logistic mixed-effects regression.
+
+Fixed effects:
+
+-   true source
+
+-   domain
+
+Random effects:
+
+-   random intercept for message
+
+-   random intercept for expert rater Report:
+
+-   percentage correct overall
+
+-   percentage correct by true source
+
+-   percentage correct by domain
+
+-   odds ratio
+
+-   95% confidence interval
+
+-   p-value
+
+This binary analysis should be treated as secondary because it excludes “not sure” responses.
+
+```{r}
+
+```
 
 # Session info
 
