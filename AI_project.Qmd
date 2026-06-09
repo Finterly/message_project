@@ -1,0 +1,199 @@
+---
+title: "AI Project"
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    html-math-method: katex
+    embed-resources: true
+    smooth-scroll: true
+editor: visual
+execute:
+  echo: true
+  include: true
+---
+
+Here we explore all our available data files
+
+# Set up
+
+```{r set-up, message = FALSE}
+library(tidyverse)
+library(readxl)
+library(gtsummary)
+
+# library(rio)
+# library(lubridate)
+# library(stringr)
+# library(janitor)
+# library(ggplot2)
+# library(plotly)
+# library(purrr)
+# library(reactable)
+# library(ggvenn)
+# library(naniar)
+# library(haven)
+```
+
+# Data
+
+## Survey
+
+```{r data}
+francois_clean_data <- read_excel("AI_messages_Eval_6-8-26.xlsx", sheet = "Sheet1") 
+nutr_rater_data <- read_excel("AI_messages_Eval_6-8-26.xlsx", sheet = "Nutr_Eval_DATA_LABELS_2026-04-0")[, 1:11]
+PA_rater_data <- read_excel("AI_messages_Eval_6-8-26.xlsx", sheet = "PA_eval_DATA_Labels")[,1:11]
+```
+
+## Basic Check
+
+```{r}
+francois_clean_data_basic_check <- francois_clean_data %>%
+  mutate(
+    check1 = case_when(
+      `perceived_source (1=human, 2=AI, 3=not sure)` == "3" ~ NA_real_,
+      `true_source (1=human, 2=AI)` == `perceived_source (1=human, 2=AI, 3=not sure)` ~ 1,
+      `true_source (1=human, 2=AI)` != `perceived_source (1=human, 2=AI, 3=not sure)` ~ 0
+    )
+  )
+
+identical(francois_clean_data_basic_check$check1, francois_clean_data_basic_check$source_correct_binary) # TRUE
+```
+
+## Clean Survey Data
+
+Rename, recode, and factor some variables for clarity
+
+```{r}
+clean_survey_data <- francois_clean_data %>%
+  mutate(
+    domain = recode(domain, "Physiscal activity" = "physical activity"),
+    domain = factor(domain, levels = c("nutrition", "physical activity")),
+    true_source = case_when(
+      `true_source (1=human, 2=AI)` == 1 ~ "human",
+      `true_source (1=human, 2=AI)` == 2 ~ "AI",
+      TRUE ~ NA_character_
+    ),
+    true_source = factor(true_source, levels = c("human", "AI")),
+    source_correct_3cat = factor(source_correct_3cat)
+  )
+
+str(clean_survey_data)
+unique(clean_survey_data$domain)
+unique(clean_survey_data$true_source)
+```
+
+## Clean Rater Data
+```{r}
+clean_nutr_rater_data <- nutr_rater_data %>%
+  mutate(rater_id = paste0("ne", `Record ID`)) %>%
+  dplyr::rename(
+    record_id = "Record ID",
+    redcap_survey_identifier = "Survey Identifier",
+    survey_timestamp = "Survey Timestamp",
+    first_name = "First Name",
+    last_name = "Last Name",
+    credentials = "Highest Degree (e.g. PhD, MD)",
+    rank = "Rank (e.g. Postdoc, Instructor, Assistant Professor, etc)",
+    years_at_rank = "Years at Rank",
+    affiliation = "Institution",
+    certifications = "License, Certifications, Professional Certifications (e.g. RDN, ACSM)",
+    area_of_expertise = "Area of Research Expertise"
+  ) %>%
+  select(rater_id, credentials, rank, years_at_rank, affiliation, certifications, area_of_expertise)
+
+clean_PA_rater_data <- PA_rater_data %>%
+  mutate(rater_id = paste0("pae", record_id)) %>%
+  dplyr::rename(
+    survey_timestamp = "evaluation_of_physical_activity_intervention_messa_timestamp",
+    first_name = "first_name_v2",
+    last_name = "last_name_v2",
+    credentials = "credentials_v2",
+    affiliation = "affiliation_v2",
+    area_of_expertise = "research_expertise"
+  ) %>%
+  select(rater_id, credentials, rank, years_at_rank, affiliation, certifications, area_of_expertise)
+
+identical(names(clean_nutr_rater_data), names(clean_PA_rater_data))
+```
+
+
+# Descriptive Analyses
+
+## Message-Level Characteristics
+
+-   Report by domain and true source:
+
+-   number of messages
+
+-   number human-generated
+
+-   number AI-generated
+
+```{r}
+# Create one-row-per-message dataset
+message_level_df <- clean_survey_data %>%
+  select(message_id, domain, true_source) %>%
+  distinct()
+
+# Table 1: Message characteristics
+table1_messages <- message_level_df %>%
+  tbl_summary(
+    by = true_source,
+    include = domain,
+    label = list(
+      domain ~ "Domain"
+    ),
+    statistic = list(
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = all_categorical() ~ c(0, 1),
+    missing = "no"
+  ) %>%
+  add_overall(last = FALSE) %>%
+  modify_header(
+    label ~ "",
+    stat_0 ~ "**Overall**<br>N = {N}",
+    stat_1 ~ "**Human-generated**<br>N = {n}",
+    stat_2 ~ "**AI-generated**<br>N = {n}"
+  ) %>%
+  modify_caption("**Table 1. Messages by domain and true source**") %>%
+  bold_labels()
+
+table1_messages
+```
+
+## Rater-Level Characteristics
+
+-   Report overall and by domain, if relevant:
+
+-   number of raters
+
+-   credentials
+
+-   rank
+
+-   years of rank
+
+-   certifications
+
+-   area of expertise
+
+### Nutrition Rater-Level Characteristics
+```{r}
+clean_nutr_rater_data
+
+```
+
+### Physical Activity Rater-Level Characteristics
+```{r}
+
+
+```
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```
