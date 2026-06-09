@@ -295,10 +295,7 @@ table_raters_by_domain
 -   perceived source: n and %
 -   correct source identification: n and %
 
--   Also report:
--   total number of ratings
--   average number of ratings per message
--   average number of messages rated per expert
+### Outcomes
 ```{r}
 outcome_table <- clean_rating_data %>%
   mutate(
@@ -372,6 +369,11 @@ outcome_table <- clean_rating_data %>%
 outcome_table
 ```
 
+### Rating Summary
+-   Also report:
+-   total number of ratings
+-   average number of ratings per message
+-   average number of messages rated per expert
 ```{r}
 rating_summary_table <- clean_rating_data %>%
   summarise(
@@ -380,7 +382,9 @@ rating_summary_table <- clean_rating_data %>%
     total_experts = n_distinct(rater_id),
     avg_ratings_per_message = total_ratings / total_messages,
     avg_messages_rated_per_expert = total_ratings / total_experts
-  ) %>%
+  ) 
+
+%>%
   transmute(
     Characteristic = c(
       "Total number of ratings",
