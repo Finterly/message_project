@@ -60,7 +60,7 @@ francois_clean_rating_data_basic_check <- francois_clean_rating_data %>%
 identical(francois_clean_rating_data_basic_check$check1, francois_clean_rating_data_basic_check$source_correct_binary) # TRUE
 ```
 
-## Clean Survey Data
+## Clean Rating Data
 
 Rename, recode, and factor some variables for clarity
 
@@ -76,6 +76,19 @@ clean_rating_data <- francois_clean_rating_data %>%
       TRUE ~ NA_character_
     ),
     true_source = factor(true_source, levels = c("human", "AI")),
+    guideline_alignment = case_when(
+      guideline_alignment == 1 ~ "yes",
+      guideline_alignment == 0 ~ "no",
+      TRUE ~ NA_character_
+    ),
+    guideline_alignment = factor(guideline_alignment, levels = c("yes", "no")),
+    perceived_source = case_when(
+      `perceived_source (1=human, 2=AI, 3=not sure)` == 1 ~ "human",
+      `perceived_source (1=human, 2=AI, 3=not sure)` == 2 ~ "AI",
+      `perceived_source (1=human, 2=AI, 3=not sure)` == 3 ~ "not sure",
+      TRUE ~ NA_character_
+    ),
+    perceived_source = factor(perceived_source, levels = c("human", "AI", "not sure")),
     source_correct_3cat = factor(source_correct_3cat)
   )
 
@@ -267,33 +280,119 @@ table1_raters_by_domain
 -   guideline alignment: n and %
 -   perceived source: n and %
 -   correct source identification: n and %
+
 -   Also report:
 -   total number of ratings
 -   average number of ratings per message
 -   average number of messages rated per expert
-
-### Quality
 ```{r}
-clean_rating_data
+outcome_table <- clean_rating_data %>%
+  mutate(
+    domain = recode(
+      domain,
+      "nutrition" = "Nutrition",
+      "physical activity" = "Physical activity",
+      "Physiscal activity" = "Physical activity"
+    ),
+    true_source = case_when(
+      true_source == 1 ~ "Human",
+      true_source == 2 ~ "AI",
+      true_source %in% c("human", "Human") ~ "Human",
+      true_source %in% c("AI", "ai") ~ "AI",
+      TRUE ~ as.character(true_source)
+    ),
+    perceived_source = case_when(
+      perceived_source == 1 ~ "Human",
+      perceived_source == 2 ~ "AI",
+      perceived_source == 3 ~ "Not sure",
+      TRUE ~ as.character(perceived_source)
+    ),
+    source_correct_3cat = case_when(
+      source_correct_3cat == 1 ~ "Correct",
+      source_correct_3cat == 0 ~ "Incorrect",
+      TRUE ~ as.character(source_correct_3cat)
+    ),
+    group = paste(domain, true_source, sep = " - ")
+  ) %>%
+  select(
+    group,
+    quality,
+    accuracy,
+    guideline_alignment,
+    perceived_source,
+    source_correct_3cat
+  ) %>%
+  tbl_summary(
+    by = group,
+    type = list(
+      quality ~ "continuous2",
+      accuracy ~ "continuous2"
+    ),
+    statistic = list(
+      all_continuous2() ~ c(
+        "{mean} ({sd})",
+        "{median} ({p25}, {p75})"
+      ),
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    label = list(
+      quality ~ "Quality",
+      accuracy ~ "Accuracy",
+      guideline_alignment ~ "Guideline alignment",
+      perceived_source ~ "Perceived source",
+      source_correct_3cat ~ "Correct source identification"
+    ),
+    digits = list(
+      all_continuous2() ~ 1,
+      all_categorical() ~ c(0, 1)
+    ),
+    missing = "ifany"
+  ) %>%
+  modify_header(
+    label ~ "**Outcome**",
+    all_stat_cols() ~ "**{level}**<br>N = {n}"
+  ) %>%
+  modify_caption("**Descriptive outcomes by domain and true source**") %>%
+  bold_labels()
 
+outcome_table
 ```
 
-### Accuracy
 ```{r}
-clean_rating_data
+rating_summary_table <- clean_rating_data %>%
+  summarise(
+    total_ratings = n(),
+    total_messages = n_distinct(message_id),
+    total_experts = n_distinct(rater_id),
+    avg_ratings_per_message = total_ratings / total_messages,
+    avg_messages_rated_per_expert = total_ratings / total_experts
+  ) %>%
+  transmute(
+    Characteristic = c(
+      "Total number of ratings",
+      "Total number of unique messages",
+      "Total number of expert raters",
+      "Average number of ratings per message",
+      "Average number of messages rated per expert"
+    ),
+    Value = c(
+      total_ratings,
+      total_messages,
+      total_experts,
+      round(avg_ratings_per_message, 1),
+      round(avg_messages_rated_per_expert, 1)
+    )
+  ) %>%
+  gt() %>%
+  tab_header(
+    title = "Rating completion summary"
+  ) %>%
+  cols_label(
+    Characteristic = "Characteristic",
+    Value = "Value"
+  )
 
-```
-
-### Guideline Alignment
-```{r}
-clean_rating_data
-
-```
-
-### Perceived Source
-```{r}
-clean_rating_data
-
+rating_summary_table
 ```
 
 # Primary Research Questions and Models
