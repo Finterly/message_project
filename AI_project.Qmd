@@ -21,6 +21,11 @@ Here we explore all our available data files
 library(tidyverse)
 library(readxl)
 library(gtsummary)
+library(gt)
+library(lme4)
+library(lmerTest)
+library(performance)
+library(emmeans)
 
 # library(rio)
 # library(lubridate)
@@ -296,6 +301,7 @@ table_raters_by_domain
 -   correct source identification: n and %
 
 ### Outcomes
+
 ```{r}
 outcome_table <- clean_rating_data %>%
   mutate(
@@ -370,10 +376,12 @@ outcome_table
 ```
 
 ### Rating Summary
+
 -   Also report:
 -   total number of ratings
 -   average number of ratings per message
 -   average number of messages rated per expert
+
 ```{r}
 rating_summary_table <- clean_rating_data %>%
   summarise(
@@ -382,30 +390,30 @@ rating_summary_table <- clean_rating_data %>%
     total_experts = n_distinct(rater_id),
     avg_ratings_per_message = total_ratings / total_messages,
     avg_messages_rated_per_expert = total_ratings / total_experts
-  ) 
-
-%>%
-  transmute(
-    Characteristic = c(
-      "Total number of ratings",
-      "Total number of unique messages",
-      "Total number of expert raters",
-      "Average number of ratings per message",
-      "Average number of messages rated per expert"
-    ),
-    Value = c(
-      total_ratings,
-      total_messages,
-      total_experts,
-      round(avg_ratings_per_message, 1),
-      round(avg_messages_rated_per_expert, 1)
-    )
   ) %>%
-  gt() %>%
-  tab_header(
+  { 
+    tibble(
+      Characteristic = c(
+        "Total number of ratings",
+        "Total number of unique messages",
+        "Total number of expert raters",
+        "Average number of ratings per message",
+        "Average number of messages rated per expert"
+      ),
+      Value = c(
+        .$total_ratings,
+        .$total_messages,
+        .$total_experts,
+        round(.$avg_ratings_per_message, 1),
+        round(.$avg_messages_rated_per_expert, 1)
+      )
+    )
+  } %>%
+  gt::gt() %>%
+  gt::tab_header(
     title = "Rating completion summary"
   ) %>%
-  cols_label(
+  gt::cols_label(
     Characteristic = "Characteristic",
     Value = "Value"
   )
@@ -417,21 +425,23 @@ rating_summary_table
 
 ## Question 1: Do human- and AI-generated messages differ in quality?
 
-```{r}
-
-```
-
 Outcome: quality, 1 to 5.
 
-Use linear mixed-effects regression. Fixed effects:
+Use linear mixed-effects regression.
+
+Fixed effects:
 
 -   true source
 
--   domain Random effects:
+-   domain
+
+Random effects:
 
 -   random intercept for message
 
--   random intercept for expert rater Report:
+-   random intercept for expert rater
+
+Report:
 
 -   adjusted mean difference for AI versus human
 
@@ -441,19 +451,125 @@ Use linear mixed-effects regression. Fixed effects:
 
 -   As a sensitivity analysis, we might consider fitting an ordinal mixed-effects model?
 
+### LMM
+
+```{r, fig.width = 12, fig.height = 12}
+quality_lmm <- lmer(
+  quality ~ true_source + domain + 
+    (1 | message_id) + 
+    (1 | rater_id),
+  data = clean_rating_data
+)
+
+# Visual diagnostic panel
+performance::check_model(quality_lmm)
+# Convergence and singularity
+performance::check_convergence(quality_lmm)
+performance::check_singularity(quality_lmm)
+# Overall model performance
+performance::model_performance(quality_lmm)
+# Variance explained
+performance::r2(quality_lmm)
+# Intraclass correlation / clustering
+performance::icc(quality_lmm)
+# Random-effect variance components
+VarCorr(quality_lmm)
+
+summary(quality_lmm)
+
+# Format results
+quality_lmm_results <- broom.mixed::tidy(
+  quality_lmm,
+  effects = "fixed",
+  conf.int = TRUE
+)
+
+quality_lmm_results %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  mutate(
+    estimate = round(estimate, 2),
+    conf.low = round(conf.low, 2),
+    conf.high = round(conf.high, 2),
+    p.value = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value))
+  ) %>%
+  gt() %>%
+  tab_header(
+    title = "Linear mixed-effects regression for quality rating"
+  ) %>%
+  cols_label(
+    term = "Predictor",
+    estimate = "Estimate",
+    conf.low = "95% CI lower",
+    conf.high = "95% CI upper",
+    p.value = "p-value"
+  )
+
+```
+
+### Emmeans
+
+```{r}
+quality ~ true_source + domain + (1 | message_id) + (1 | rater_id)
+
+
+quality_source_emm <- emmeans(
+  quality_lmm,
+  ~ true_source
+)
+
+quality_source_contrast <- contrast(
+  quality_source_emm,
+  method = "pairwise"
+)
+
+summary(
+  quality_source_contrast,
+  infer = TRUE
+)
+
+quality_source_contrast_table <- summary(
+  quality_source_contrast,
+  infer = TRUE
+) %>%
+  as.data.frame() %>%
+  mutate(
+    estimate = round(estimate, 2),
+    lower.CL = round(lower.CL, 2),
+    upper.CL = round(upper.CL, 2),
+    p.value = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)),
+    result = paste0(
+      estimate, " (95% CI: ", lower.CL, ", ", upper.CL, "), p = ", p.value
+    )
+  )
+
+quality_source_contrast_table
+```
+
+### Quick Anova Check
+
+```{r}
+anova(quality_lmm)
+```
+
 ## Question 2: Do human- and AI-generated messages differ in accuracy?
 
 Outcome: accuracy, 1 to 5.
 
-Use linear mixed-effects regression. Fixed effects:
+Use linear mixed-effects regression.
+
+Fixed effects:
 
 -   true source
 
--   domain Random effects:
+-   domain
+
+Random effects:
 
 -   random intercept for message
 
--   random intercept for expert rater Report:
+-   random intercept for expert rater
+
+Report:
 
 -   adjusted mean difference for AI versus human
 
@@ -471,15 +587,21 @@ Use linear mixed-effects regression. Fixed effects:
 
 Outcome: guideline alignment, 0 or 1.
 
-Use logistic mixed-effects regression. Fixed effects:
+Use logistic mixed-effects regression.
+
+Fixed effects:
 
 -   true source
 
--   domain Random effects:
+-   domain
+
+Random effects:
 
 -   random intercept for message
 
--   random intercept for expert rater Report:
+-   random intercept for expert rater
+
+Report:
 
 -   odds ratio for AI versus human
 
@@ -495,7 +617,7 @@ Use logistic mixed-effects regression. Fixed effects:
 
 Analyze source identification in two ways.
 
-### 4a. Three-Category Source Identification Outcome 
+### 4a. Three-Category Source Identification Outcome
 
 Create a three-category source identification variable:
 
@@ -535,7 +657,7 @@ This should be the primary source-identification analysis because “not sure”
 
 ```
 
-### 4b. Binary Source Identification Among Forced Classifications 
+### 4b. Binary Source Identification Among Forced Classifications
 
 For this analysis, exclude “not sure” responses. Create a binary source identification variable:
 
