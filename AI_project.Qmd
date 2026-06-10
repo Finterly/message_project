@@ -26,6 +26,9 @@ library(lme4)
 library(lmerTest)
 library(performance)
 library(emmeans)
+library(ggplot2)
+library(plotly)
+library(purrr)
 
 # library(rio)
 # library(lubridate)
@@ -451,8 +454,21 @@ Report:
 
 -   As a sensitivity analysis, we might consider fitting an ordinal mixed-effects model?
 
-### LMM
+### Exploratory Plot
+```{r}
+source("AI_project_functions.r")
 
+clean_rating_data %>%
+  filter(domain == "Nutrition") %>%
+  make_rating_plot(quality, "Nutrition")
+
+clean_rating_data %>%
+  filter(domain == "Physical Activity") %>%
+  make_rating_plot(quality, "Physical Activity")
+```
+
+### Model
+Model diagnostics indicated successful convergence and no evidence of singular fit. Visual residual diagnostics showed some departures from normality and patterned residuals, which were expected given the bounded 1–5 ordinal rating scale. No major concerns with collinearity or influential observations were observed. The linear mixed-effects model was retained as the primary planned analysis, with results interpreted as adjusted mean differences in rating points.
 ```{r, fig.width = 12, fig.height = 12}
 quality_lmm <- lmer(
   quality ~ true_source + domain + 
@@ -461,53 +477,34 @@ quality_lmm <- lmer(
   data = clean_rating_data
 )
 
-# Visual diagnostic panel
-performance::check_model(quality_lmm)
-# Convergence and singularity
-performance::check_convergence(quality_lmm)
-performance::check_singularity(quality_lmm)
-# Overall model performance
-performance::model_performance(quality_lmm)
-# Variance explained
-performance::r2(quality_lmm)
-# Intraclass correlation / clustering
-performance::icc(quality_lmm)
-# Random-effect variance components
-VarCorr(quality_lmm)
+# # Visual diagnostic panel
+# performance::check_model(quality_lmm)
+# # Convergence and singularity
+# performance::check_convergence(quality_lmm)
+# performance::check_singularity(quality_lmm)
+# # Overall model performance
+# performance::model_performance(quality_lmm)
+# # Variance explained
+# performance::r2(quality_lmm)
+# # Intraclass correlation / clustering
+# performance::icc(quality_lmm)
+# # Random-effect variance components
+# VarCorr(quality_lmm)
 
+# Summary
 summary(quality_lmm)
+# ranef(quality_lmm)
 
-# Format results
-quality_lmm_results <- broom.mixed::tidy(
-  quality_lmm,
-  effects = "fixed",
-  conf.int = TRUE
-)
-
-quality_lmm_results %>%
-  select(term, estimate, conf.low, conf.high, p.value) %>%
-  mutate(
-    estimate = round(estimate, 2),
-    conf.low = round(conf.low, 2),
-    conf.high = round(conf.high, 2),
-    p.value = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value))
-  ) %>%
-  gt() %>%
-  tab_header(
-    title = "Linear mixed-effects regression for quality rating"
-  ) %>%
-  cols_label(
-    term = "Predictor",
-    estimate = "Estimate",
-    conf.low = "95% CI lower",
-    conf.high = "95% CI upper",
-    p.value = "p-value"
-  )
+# Random-effect estimates indicated meaningful variability across both messages and expert raters. The standard deviation of the message-level random intercept was 0.45, suggesting that some messages were rated consistently higher or lower than others after adjustment for true source and domain. The standard deviation of the rater-level random intercept was 0.47, indicating differences in overall rating tendencies across expert raters. These findings support the inclusion of random intercepts for both message and rater.
 
 ```
 
-### Emmeans
+### Interpretation
+In the linear mixed-effects model adjusted for domain and including random intercepts for message and expert rater, there was no statistically significant difference in quality ratings between AI- and human-generated messages. AI-generated messages had an adjusted mean quality rating 0.05 points higher than human-generated messages, but the 95% CI included 0, indicating no clear evidence of a difference (adjusted mean difference = 0.05, 95% CI: -0.11 to 0.21, p = 0.545).
 
+Domain was also not significantly associated with quality ratings; physical activity messages were rated 0.15 points lower than nutrition messages on average (estimate = -0.15, p = 0.614). Random-effect estimates indicated variability in ratings across both messages and expert raters.
+
+### Emmeans
 ```{r}
 quality ~ true_source + domain + (1 | message_id) + (1 | rater_id)
 
@@ -545,11 +542,25 @@ quality_source_contrast_table <- summary(
 quality_source_contrast_table
 ```
 
-### Quick Anova Check
-
+### Sensitivity Analysis
+Ordinal Mixed-effects model (hard to interpret)
+ANOVA
 ```{r}
+library(ordinal)
+
+quality_clmm <- clmm(
+  factor(quality, ordered = TRUE) ~ true_source + domain +
+    (1 | message_id) +
+    (1 | rater_id),
+  data = clean_rating_data
+)
+
+summary(quality_clmm)
+
+# Anova - likelihood ratio test?
 anova(quality_lmm)
 ```
+
 
 ## Question 2: Do human- and AI-generated messages differ in accuracy?
 
@@ -578,6 +589,17 @@ Report:
 -   p-value
 
 -   As a sensitivity analysis, we might consider fitting an ordinal mixed-effects model?
+
+### Plot
+```{r}
+clean_rating_data %>%
+  filter(domain == "Nutrition") %>%
+  make_rating_plot(accuracy, "Nutrition")
+
+clean_rating_data %>%
+  filter(domain == "Physical Activity") %>%
+  make_rating_plot(accuracy, "Physical Activity")
+```
 
 ```{r}
 
