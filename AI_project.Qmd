@@ -454,18 +454,6 @@ Report:
 
 -   As a sensitivity analysis, we might consider fitting an ordinal mixed-effects model?
 
-### Exploratory Plot
-```{r}
-source("AI_project_functions.r")
-
-clean_rating_data %>%
-  filter(domain == "Nutrition") %>%
-  make_rating_plot(quality, "Nutrition")
-
-clean_rating_data %>%
-  filter(domain == "Physical Activity") %>%
-  make_rating_plot(quality, "Physical Activity")
-```
 
 ### Model
 Model diagnostics indicated successful convergence and no evidence of singular fit. Visual residual diagnostics showed some departures from normality and patterned residuals, which were expected given the bounded 1–5 ordinal rating scale. No major concerns with collinearity or influential observations were observed. The linear mixed-effects model was retained as the primary planned analysis, with results interpreted as adjusted mean differences in rating points.
@@ -477,90 +465,16 @@ quality_lmm <- lmer(
   data = clean_rating_data
 )
 
-# # Visual diagnostic panel
-# performance::check_model(quality_lmm)
-# # Convergence and singularity
-# performance::check_convergence(quality_lmm)
-# performance::check_singularity(quality_lmm)
-# # Overall model performance
-# performance::model_performance(quality_lmm)
-# # Variance explained
-# performance::r2(quality_lmm)
-# # Intraclass correlation / clustering
-# performance::icc(quality_lmm)
-# # Random-effect variance components
-# VarCorr(quality_lmm)
+# Visual diagnostic panel
+performance::check_model(quality_lmm)
 
 # Summary
 summary(quality_lmm)
 # ranef(quality_lmm)
-
-# Random-effect estimates indicated meaningful variability across both messages and expert raters. The standard deviation of the message-level random intercept was 0.45, suggesting that some messages were rated consistently higher or lower than others after adjustment for true source and domain. The standard deviation of the rater-level random intercept was 0.47, indicating differences in overall rating tendencies across expert raters. These findings support the inclusion of random intercepts for both message and rater.
-
 ```
 
 ### Interpretation
 In the linear mixed-effects model adjusted for domain and including random intercepts for message and expert rater, there was no statistically significant difference in quality ratings between AI- and human-generated messages. AI-generated messages had an adjusted mean quality rating 0.05 points higher than human-generated messages, but the 95% CI included 0, indicating no clear evidence of a difference (adjusted mean difference = 0.05, 95% CI: -0.11 to 0.21, p = 0.545).
-
-Domain was also not significantly associated with quality ratings; physical activity messages were rated 0.15 points lower than nutrition messages on average (estimate = -0.15, p = 0.614). Random-effect estimates indicated variability in ratings across both messages and expert raters.
-
-### Emmeans
-```{r}
-quality ~ true_source + domain + (1 | message_id) + (1 | rater_id)
-
-
-quality_source_emm <- emmeans(
-  quality_lmm,
-  ~ true_source
-)
-
-quality_source_contrast <- contrast(
-  quality_source_emm,
-  method = "pairwise"
-)
-
-summary(
-  quality_source_contrast,
-  infer = TRUE
-)
-
-quality_source_contrast_table <- summary(
-  quality_source_contrast,
-  infer = TRUE
-) %>%
-  as.data.frame() %>%
-  mutate(
-    estimate = round(estimate, 2),
-    lower.CL = round(lower.CL, 2),
-    upper.CL = round(upper.CL, 2),
-    p.value = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)),
-    result = paste0(
-      estimate, " (95% CI: ", lower.CL, ", ", upper.CL, "), p = ", p.value
-    )
-  )
-
-quality_source_contrast_table
-```
-
-### Sensitivity Analysis
-Ordinal Mixed-effects model (hard to interpret)
-ANOVA
-```{r}
-library(ordinal)
-
-quality_clmm <- clmm(
-  factor(quality, ordered = TRUE) ~ true_source + domain +
-    (1 | message_id) +
-    (1 | rater_id),
-  data = clean_rating_data
-)
-
-summary(quality_clmm)
-
-# Anova - likelihood ratio test?
-anova(quality_lmm)
-```
-
 
 ## Question 2: Do human- and AI-generated messages differ in accuracy?
 
@@ -590,20 +504,23 @@ Report:
 
 -   As a sensitivity analysis, we might consider fitting an ordinal mixed-effects model?
 
-### Plot
-```{r}
-clean_rating_data %>%
-  filter(domain == "Nutrition") %>%
-  make_rating_plot(accuracy, "Nutrition")
+### Model
+```{r, fig.width = 12, fig.height = 12}
+quality_lmm <- lmer(
+  accuracy ~ true_source + domain + 
+    (1 | message_id) + 
+    (1 | rater_id),
+  data = clean_rating_data
+)
 
-clean_rating_data %>%
-  filter(domain == "Physical Activity") %>%
-  make_rating_plot(accuracy, "Physical Activity")
+# Visual diagnostic panel
+performance::check_model(quality_lmm)
+
+# Summary
+summary(quality_lmm)
 ```
-
-```{r}
-
-```
+### Interpretation
+In the linear mixed-effects model adjusted for domain and including random intercepts for message and expert rater, AI-generated messages had significantly lower quality ratings than human-generated messages. On average, AI-generated messages were rated 0.19 points lower than human-generated messages, adjusting for domain and the clustering of ratings within messages and raters (estimate = -0.19, SE = 0.09, p = 0.030).
 
 ## Question 3: Do human- and AI-generated messages differ in guideline alignment?
 
@@ -676,6 +593,43 @@ Report:
 This should be the primary source-identification analysis because “not sure” was an available response option.
 
 ```{r}
+### Emmeans
+```{r}
+quality ~ true_source + domain + (1 | message_id) + (1 | rater_id)
+
+
+quality_source_emm <- emmeans(
+  quality_lmm,
+  ~ true_source
+)
+
+quality_source_contrast <- contrast(
+  quality_source_emm,
+  method = "pairwise"
+)
+
+summary(
+  quality_source_contrast,
+  infer = TRUE
+)
+
+quality_source_contrast_table <- summary(
+  quality_source_contrast,
+  infer = TRUE
+) %>%
+  as.data.frame() %>%
+  mutate(
+    estimate = round(estimate, 2),
+    lower.CL = round(lower.CL, 2),
+    upper.CL = round(upper.CL, 2),
+    p.value = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)),
+    result = paste0(
+      estimate, " (95% CI: ", lower.CL, ", ", upper.CL, "), p = ", p.value
+    )
+  )
+
+quality_source_contrast_table
+```
 
 ```
 
