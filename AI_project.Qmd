@@ -29,6 +29,7 @@ library(emmeans)
 library(ggplot2)
 library(plotly)
 library(purrr)
+library(DHARMa)
 
 # library(rio)
 # library(lubridate)
@@ -384,7 +385,6 @@ outcome_table
 -   total number of ratings
 -   average number of ratings per message
 -   average number of messages rated per expert
-
 ```{r}
 rating_summary_table <- clean_rating_data %>%
   summarise(
@@ -505,8 +505,8 @@ Report:
 -   As a sensitivity analysis, we might consider fitting an ordinal mixed-effects model?
 
 ### Model
-```{r, fig.width = 12, fig.height = 12}
-quality_lmm <- lmer(
+```{r, fig.width = 12, fig.height = 16}
+accuracy_lmm <- lmer(
   accuracy ~ true_source + domain + 
     (1 | message_id) + 
     (1 | rater_id),
@@ -514,10 +514,10 @@ quality_lmm <- lmer(
 )
 
 # Visual diagnostic panel
-performance::check_model(quality_lmm)
+performance::check_model(accuracy_lmm)
 
 # Summary
-summary(quality_lmm)
+summary(accuracy_lmm)
 ```
 ### Interpretation
 In the linear mixed-effects model adjusted for domain and including random intercepts for message and expert rater, AI-generated messages had significantly lower quality ratings than human-generated messages. On average, AI-generated messages were rated 0.19 points lower than human-generated messages, adjusting for domain and the clustering of ratings within messages and raters (estimate = -0.19, SE = 0.09, p = 0.030).
@@ -548,9 +548,40 @@ Report:
 
 -   p-value
 
-```{r}
+### Model
+```{r, fig.width = 12, fig.height = 16}
+guideline_glmm <- glmer(
+  guideline_alignment ~ true_source + domain +
+    (1 | message_id) +
+    (1 | rater_id),
+  data = clean_rating_data,
+  family = binomial(link = "logit")
+)
 
+# Visual diagnostic panel
+performance::check_model(guideline_glmm)
+
+# Simulate DHARMa residuals
+guideline_dharma <- simulateResiduals(
+  fittedModel = guideline_glmm,
+  n = 1000
+)
+
+# Main DHARMa diagnostic plots
+plot(guideline_dharma)
+
+# Summary on log-odds scale
+summary(guideline_glmm)
+
+exp(1.5096)
+
+exp(1.5096 + c(-1, 1) * 1.96 * 0.2542)
 ```
+
+### Interpretation
+In the logistic mixed-effects model adjusted for domain and including random intercepts for message and expert rater, AI-generated messages had significantly higher odds of guideline alignment than human-generated messages. The odds of guideline alignment were approximately 4.53 times higher for AI-generated messages compared with human-generated messages, adjusting for domain and accounting for clustering by message and rater (OR = 4.53, 95% CI: 2.75 to 7.45, p < 0.001).
+
+Domain was not significantly associated with guideline alignment. Physical activity messages had similar odds of guideline alignment compared with nutrition messages, with no evidence of a statistically significant difference between domains (OR = 1.13, p = 0.893).
 
 ## Question 4: Can experts correctly identify whether messages were human- or AI-generated?
 
@@ -593,8 +624,11 @@ Report:
 This should be the primary source-identification analysis because “not sure” was an available response option.
 
 ```{r}
-### Emmeans
+clean_rating_data
+```
+
 ```{r}
+### Emmeans
 quality ~ true_source + domain + (1 | message_id) + (1 | rater_id)
 
 
@@ -631,7 +665,6 @@ quality_source_contrast_table <- summary(
 quality_source_contrast_table
 ```
 
-```
 
 ### 4b. Binary Source Identification Among Forced Classifications
 
